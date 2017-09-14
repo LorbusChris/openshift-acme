@@ -45,7 +45,7 @@ func NewRouteController(ctx context.Context, client v1core.CoreV1Interface, acme
 	rc.ctx = ctx
 	rc.selfService = selfService
 	err = rc.UpdateSelfServiceEndpointSubsets()
-	if err != nil {
+	if err != nil && !kerrors.IsNotFound(err) {
 		return
 	}
 	rc.watchNamespaces = watchNamespaces
@@ -67,7 +67,7 @@ func (rc *RouteController) doWatchIteration(namespace string) error {
 		url = fmt.Sprintf("/oapi/v1/watch/namespaces/%s/routes", namespace)
 	}
 	w, err := untypedclient.Watch(rc.client.RESTClient(), url+"?resourceVersion="+rc.resourceVersions[namespace])
-	if err != nil {
+	if err != nil && !kerrors.IsNotFound(err) {
 		return fmt.Errorf("watch failed: %s", err)
 	}
 	defer w.Stop()
@@ -82,7 +82,7 @@ func (rc *RouteController) doWatchIteration(namespace string) error {
 			}
 
 			var event oapi.Event
-			if err := json.Unmarshal(rawEvent, &event); err != nil {
+			if err := json.Unmarshal(rawEvent, &event); err != nil && !kerrors.IsNotFound(err) {
 				log.Error(err)
 				return fmt.Errorf("watch failed to unmarshal event: %s", err)
 			}
@@ -90,7 +90,7 @@ func (rc *RouteController) doWatchIteration(namespace string) error {
 			switch event.Type {
 			case "ERROR":
 				var status unversioned.Status
-				if err := json.Unmarshal(event.Object, &status); err != nil {
+				if err := json.Unmarshal(event.Object, &status); err != nil && !kerrors.IsNotFound(err) {
 					log.Error(err)
 					return fmt.Errorf("RouteController: failed to unmarshal Status: '%s'", err)
 				}
@@ -112,7 +112,7 @@ func (rc *RouteController) doWatchIteration(namespace string) error {
 			}
 
 			var route oapi.Route
-			if err := json.Unmarshal(event.Object, &route); err != nil {
+			if err := json.Unmarshal(event.Object, &route); err != nil && !kerrors.IsNotFound(err) {
 				log.Error(err)
 				return fmt.Errorf("RouteController: failed to unmarshal Route: '%s'", err)
 			}
@@ -152,7 +152,7 @@ func (rc *RouteController) doWatchIteration(namespace string) error {
 					exposers:                   rc.exposers,
 					SelfServiceEndpointSubsets: rc.selfServiceEndpointSubsets,
 				})
-				if err != nil {
+				if err != nil && !kerrors.IsNotFound(err) {
 					return fmt.Errorf("acme.Manage failed: %s", err)
 				}
 			case "DELETED":
@@ -162,7 +162,7 @@ func (rc *RouteController) doWatchIteration(namespace string) error {
 					exposers:                   rc.exposers,
 					SelfServiceEndpointSubsets: rc.selfServiceEndpointSubsets,
 				})
-				if err != nil {
+				if err != nil && !kerrors.IsNotFound(err) {
 					return fmt.Errorf("acme.Done failed: %s", err)
 				}
 			default:
@@ -222,7 +222,7 @@ func (rc *RouteController) Wait() {
 
 func (rc *RouteController) UpdateSelfServiceEndpointSubsets() (err error) {
 	service, err := rc.client.Services(rc.selfService.Namespace).Get(rc.selfService.Name)
-	if err != nil {
+	if err != nil && !kerrors.IsNotFound(err) {
 		return fmt.Errorf("RouteController could not find its own service: '%s'", err)
 	}
 
@@ -233,11 +233,14 @@ func (rc *RouteController) UpdateSelfServiceEndpointSubsets() (err error) {
 		// this is a headless service; go for endpoints directly
 		// usually a case for development setups
 		endpoints, err := rc.client.Endpoints(rc.selfService.Namespace).Get(rc.selfService.Name)
-		if err != nil {
+		if err != nil && !kerrors.IsNotFound(err) {
 			return fmt.Errorf("RouteController could not find corresponding endpoints to its own service: '%s'", err)
+		} else if len(endpoints.Subsets) > 0 {
+			// TODO: make sure subsets are valid
+			rc.selfServiceEndpointSubsets = endpoints.Subsets
+		} else {
+			return errors.New("EndpointsSubsets is empty")
 		}
-		// TODO: check if there are any subsets and make sure there are valid
-		rc.selfServiceEndpointSubsets = endpoints.Subsets
 	default:
 		// for regular service we will use static and load-balanced ClusterIP
 		endpoints, err := rc.client.Endpoints(rc.selfService.Namespace).Get(rc.selfService.Name)
