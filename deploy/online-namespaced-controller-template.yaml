@@ -1,0 +1,155 @@
+apiVersion: v1
+kind: Template
+metadata:
+  name: namespaced-acme-controller
+parameters:
+- description: ACME Endpoint URL
+  name: OPENSHIFT_ACME_ACMEURL
+  value: https://acme-staging.api.letsencrypt.org/directory
+- description: Controller loglevel
+  name: OPENSHIFT_ACME_LOGLEVEL
+  value: "8"
+- description: Name of the acme-controller service
+  name: OPENSHIFT_ACME_SELFSERVICENAME
+  value: acme-controller
+- description: Namespace of the project to deploy acme-controller under
+  name: NAMESPACE
+  value: ${NAMESPACE}
+- description: Docker Image of ACME controller
+  name: DOCKER_IMAGE
+  value: docker.io/lorbus/openshift-acme
+- description: Docker Image Tag of ACME controller
+  name: DOCKER_IMAGE_TAG
+  value: latest
+objects:
+- apiVersion: v1
+  kind: ServiceAccount
+  metadata:
+    name: ${OPENSHIFT_ACME_SELFSERVICENAME}
+- apiVersion: v1
+  kind: RoleBinding
+  metadata:
+    name: ${OPENSHIFT_ACME_SELFSERVICENAME}
+    labels:
+      app: ${OPENSHIFT_ACME_SELFSERVICENAME}
+  roleRef:
+    kind: Role
+    name: admin
+  subjects:
+  - kind: ServiceAccount
+    name: ${OPENSHIFT_ACME_SELFSERVICENAME}
+    namespace: ${NAMESPACE}
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    name: ${OPENSHIFT_ACME_SELFSERVICENAME}
+    labels:
+      type: ${OPENSHIFT_ACME_SELFSERVICENAME}
+  spec:
+    lookupPolicy:
+      local: false
+    tags:
+    - annotations:
+        openshift.io/imported-from: ${DOCKER_IMAGE}:${DOCKER_IMAGE_TAG}
+      from:
+        kind: DockerImage
+        name: ${DOCKER_IMAGE}:${DOCKER_IMAGE_TAG}
+      importPolicy:
+        scheduled: true
+      name: latest
+      referencePolicy:
+        type: Source
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: ${OPENSHIFT_ACME_SELFSERVICENAME}
+    name: ${OPENSHIFT_ACME_SELFSERVICENAME}
+  spec:
+    replicas: 1
+    selector:
+      app: ${OPENSHIFT_ACME_SELFSERVICENAME}
+    strategy:
+      activeDeadlineSeconds: 21600
+      recreateParams:
+        timeoutSeconds: 600
+      resources: {}
+      type: Recreate
+    template:
+      metadata:
+        labels:
+          app: ${OPENSHIFT_ACME_SELFSERVICENAME}
+      spec:
+        containers:
+        - env:
+          - name: OPENSHIFT_ACME_ACMEURL
+            value: ${OPENSHIFT_ACME_ACMEURL}
+          - name: OPENSHIFT_ACME_LOGLEVEL
+            value: ${OPENSHIFT_ACME_LOGLEVEL}
+          - name: OPENSHIFT_ACME_SELFSERVICENAME
+            value: ${OPENSHIFT_ACME_SELFSERVICENAME}
+          - name: OPENSHIFT_ACME_SELFSERVICENAMESPACE
+            value: ${NAMESPACE}
+          - name: OPENSHIFT_ACME_WATCH_NAMESPACE
+            value: ${NAMESPACE}
+          image: acme-controller:latest
+          imagePullPolicy: IfNotPresent
+          name: ${OPENSHIFT_ACME_SELFSERVICENAME}
+          ports:
+          - containerPort: 80
+            protocol: TCP
+          resources:
+            limits:
+              cpu: '500m'
+              memory: '512Mi'
+            requests:
+              cpu: '500m'
+              memory: '512Mi'
+          livenessProbe:
+            tcpSocket:
+              port: 5000
+            initialDelaySeconds: 10
+            timeoutSeconds: 2
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: 5000
+            initialDelaySeconds: 10
+            timeoutSeconds: 2
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+        serviceAccountName: ${OPENSHIFT_ACME_SELFSERVICENAME}
+    test: false
+    triggers:
+    - type: ImageChange
+      imageChangeParams:
+        automatic: true
+        containerNames:
+        - ${OPENSHIFT_ACME_SELFSERVICENAME}
+        from:
+          kind: ImageStreamTag
+          name: acme-controller:latest
+    - type: ConfigChange
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: ${OPENSHIFT_ACME_SELFSERVICENAME}
+  spec:
+    ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 5000
+    selector:
+      app: ${OPENSHIFT_ACME_SELFSERVICENAME}
+    type: NodePort
