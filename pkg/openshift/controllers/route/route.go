@@ -226,41 +226,24 @@ func (rc *RouteController) UpdateSelfServiceEndpointSubsets() (err error) {
 		return fmt.Errorf("RouteController could not find its own service: '%s'", err)
 	}
 
-	switch service.Spec.ClusterIP {
-	case "":
-		return errors.New("unable to detect selfServiceIP: clusterIP=''")
-	case "None":
-		// this is a headless service; go for endpoints directly
-		// usually a case for development setups
-		endpoints, err := rc.client.Endpoints(rc.selfService.Namespace).Get(rc.selfService.Name)
-		if err != nil {
-			return fmt.Errorf("RouteController could not find corresponding endpoints to its own service: '%s'", err)
-		}
-		// TODO: check if there are any subsets and make sure there are valid
-		rc.selfServiceEndpointSubsets = endpoints.Subsets
-	default:
-		// for regular service we will use static and load-balanced ClusterIP
-		endpoints, err := rc.client.Endpoints(rc.selfService.Namespace).Get(rc.selfService.Name)
-		if err != nil && !kerrors.IsNotFound(err) {
-			return fmt.Errorf("RouteController encountered an error connecting to its endpoints: '%s'", err)
-		} else if len(endpoints.Subsets) > 0 {
-			rc.selfServiceEndpointSubsets = endpoints.Subsets
-		} else {
-			ports := []api_v1.EndpointPort{}
-			for _, svc_port := range service.Spec.Ports {
-				ports = append(ports, api_v1.EndpointPort{Port: svc_port.Port})
-			}
-			rc.selfServiceEndpointSubsets = []api_v1.EndpointSubset{
+	route, err := rc.client.Routes(rc.selfService.Namespace).Get(rc.selfService.Name)
+	if err != nil {
+		return fmt.Errorf("RouteController could not find its own route: '%s'", err)
+	}
+
+	ports := []api_v1.EndpointPort{}
+	for _, svc_port := range service.Spec.Ports {
+		ports = append(ports, api_v1.EndpointPort{Port: svc_port.Port})
+	}
+	rc.selfServiceEndpointSubsets = []api_v1.EndpointSubset{
+		{
+			Addresses: []api_v1.EndpointAddress{
 				{
-					Addresses: []api_v1.EndpointAddress{
-						{
-							IP: service.Spec.ClusterIP,
-						},
-					},
-					Ports: ports,
+					Hostname: route.spec.host,
 				},
-			}
-		}
+			},
+			Ports: ports,
+		},
 	}
 
 	log.Debugf("Detected subsets for selfService: '%+v'", rc.selfServiceEndpointSubsets)

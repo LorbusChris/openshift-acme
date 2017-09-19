@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/tnozicka/openshift-acme/cmd"
+	"github.com/LorbusChris/openshift-acme/cmd"
 )
 
 func main() {

@@ -18,7 +18,7 @@ import (
 	"github.com/tnozicka/openshift-acme/pkg/acme/challengeexposers"
 	cmdutil "github.com/tnozicka/openshift-acme/pkg/cmd/util"
 	acme_controller "github.com/tnozicka/openshift-acme/pkg/openshift/controllers/acme"
-	route_controller "github.com/tnozicka/openshift-acme/pkg/openshift/controllers/route"
+	route_controller "github.com/LorbusChris/openshift-acme/pkg/openshift/controllers/route"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )

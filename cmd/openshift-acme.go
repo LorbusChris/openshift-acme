@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/tnozicka/openshift-acme/pkg/cmd"
+	"github.com/LorbusChris/openshift-acme/pkg/cmd"
 )
 
 func Run() error {
